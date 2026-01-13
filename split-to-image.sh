@@ -8,8 +8,7 @@ set -euo pipefail
 # Extract the directory name from the input pdf's full path
 PDF_PATH=$(readlink -f "$1")
 PDF_DIR=$(dirname "$PDF_PATH")
-PDF_FILE_NAME=$(basename "$PDF_PATH")
-PDF_NAME="${PDF_FILE_NAME%.*}" # the filename without extension
+PDF_NAME=$(basename "${PDF_PATH%.*}") # the filename without extension
 
 # Make the working dir and copy the original PDF into it
 # If the working dir already exists, we'll exit early with an error
