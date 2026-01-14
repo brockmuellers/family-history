@@ -16,6 +16,7 @@ General strategy:
   * Sleep for a bit between requests, depending on RPM. Handle "request limit exceeded" errors gracefully.
 * Results will be saved as text files alongside the images, along with timestamps (or versioning?).
 * In a separate script (because rate limiting will likely make the OCR a multi-step process), I will interleave the original scans with the processed text in a single large output PDF.
+* Requires API key, even for free tier: `export GEMINI_API_KEY='your_key_here'`, [get key from here](https://aistudio.google.com/api-keys)
 
 Potential improvements:
 * For longer letters, experiment with using smaller batches to see if that improves results.
@@ -29,5 +30,21 @@ Random notes:
 * I've instructed the model to use a separator between pages, so I can interleave them properly later.
 * In the prompt, play around with strategies to improve transcription. If there are specific characters that it gets wrong (a writer forms certain letters to look like others; maybe certain names or words appear frequently that can be used as an anchor), provide guidance to improve recognition.
 
-The main prompt can be found in system_instruction.md.
+The main prompt can be found in system_instruction.md. I sometimes use this for manual runs (in tests, the workflow section was pasted at the end):
+```
+Below are your instructions. I am uploading some images that you will process, but do not do it just yet. Confirm that you understand the instructions and let me know if there's anything I should clarify. Then, I will provide you a range of pages to transcribe (we will do it in several batches).
+
+### **Workflow**
+
+**Step 1: Handwriting Analysis (Internal Monologue)**
+Briefly scan the pages to identify unique handwriting quirks or difficult sections. (Do not output this yet).
+
+**Step 2: Verbatim Transcription**
+Generate the transcription inside a single Markdown Code Block. Apply all formatting rules from the "Style & Formatting Guide" above.
+
+**Step 3: Post-Transcription Commentary**
+OUTSIDE the code block, provide a brief summary of:
+* Recurring handwriting patterns/difficulties.
+* Any significant formatting interventions you had to make.
+```
 
