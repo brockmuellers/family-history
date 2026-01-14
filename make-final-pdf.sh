@@ -2,6 +2,7 @@
 # Convert md files to pdfs, and append them into one big pdf
 # Input argument is the original PDF of unprocessed pages
 # Ultimately I'd like a more complex pdf output including original images
+# NOTE AND TODO: if multiple models were used, this will grab results from all of them, which is a mess
 # But this is a good start
 set -euo pipefail
 
