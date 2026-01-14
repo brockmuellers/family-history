@@ -4,6 +4,7 @@
 # If there is not yet a text file defining the pages of each letter, make it
 # Finally, split the PDF to a series of images for OCR
 set -euo pipefail
+shopt -s nullglob
 
 # Extract the directory name from the input pdf's full path
 PDF_PATH=$(readlink -f "$1")
@@ -33,4 +34,8 @@ fi
 # Rely on this to crash if the input is not a pdf
 echo "Generating images..."
 pdftoppm -png "$PDF_PATH" "${TEMP_DIR}/page"
+# pdftoppm 0 pads filenames if there are more than 9 images, but doesn't otherwise
+# so I'll add the 0 padding manually for predictable results (nullglob is relevant here)
+for f in "$TEMP_DIR"/page-[0-9].png; do mv "$f" "${f/page-/page-0}"; done
+
 echo "Generated images from PDF\nSuccess: file ready for OCR processing!"

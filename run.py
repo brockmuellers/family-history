@@ -8,11 +8,17 @@ from google import genai
 from google.genai import types
 
 """
-# TODO how do you represent the optional arg, conventionally
-RUN: python run.py original_pdf_file_to_transcribe.pdf [pages_file.txt]
+RUN: python run.py original_pdf_file_to_transcribe.pdf
 """
 
-MODEL = 'gemini-2.5-flash-lite'
+# Models mapped to a shorthand (used as args and appended to results files)
+MODELS = {
+    '25fl': 'gemini-2.5-flash-lite', # cheap and adequate at OCR but bad at following instructions, 10 RPM 20 RPD
+    '25f': 'gemini-2.5-flash', # cheapish, ???, 5 RPM 20 RPD
+    '25p': 'gemini-2.5-pro', # pricey, got a 429 so maybe I can't use it
+    '3fp': 'gemini-3-flash-preview', # cheapish, 5 RPM 20 RPD
+    #'3pp': 'gemini-3-pro-preview' # I don't get this in the free tier
+    }
 COOLDOWN = 5
 USER_PROMPT = "Transcribe these letter pages, in the following order: {}"
 SYSTEM_INSTRUCTION_FILE = "system_instruction.md"
@@ -39,7 +45,9 @@ def get_pdf_dir_and_name(pdf_path):
     pdf_name = os.path.splitext(pdf_file_name)[0] # name without extension
     return os.path.dirname(os.path.abspath(pdf_path)), pdf_name
 
-def transcribe_batch(pdf_path, pages_file="", skip_letters=[], verbose=False):
+def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose=False):
+    model_name = MODELS[model]
+    model_key = model
 
     if not os.path.exists(pdf_path):
         print(f"Cannot find input file {pdf_path}")
@@ -49,7 +57,7 @@ def transcribe_batch(pdf_path, pages_file="", skip_letters=[], verbose=False):
     # relying on the preprocessing script but we could add preprocessing here later I suppose
     pdf_dir, pdf_name = get_pdf_dir_and_name(pdf_path)
     image_dir = f"{pdf_dir}/temp_{pdf_name}"
-    if pages_file == "":
+    if pages_file == "" or pages_file is None:
         pages_file = f"{pdf_dir}/pages_{pdf_name}.txt"
     output_dir = image_dir
 
@@ -71,9 +79,9 @@ def transcribe_batch(pdf_path, pages_file="", skip_letters=[], verbose=False):
 
     for i, pages in enumerate(pages_list):
         if i in skip_letters:
-            print(f"Skipping letter {i} per user request")
+            print(f"Skipping letter index {i} per user request")
             continue
-        print(f"Processing letter {i} of {len(pages_list)}; pages {pages}")
+        print(f"Processing letter index {i} of {len(pages_list)}; pages {pages}")
         start_time = time.time()
 
         # BUILD REQUEST
@@ -94,7 +102,7 @@ def transcribe_batch(pdf_path, pages_file="", skip_letters=[], verbose=False):
         # TRANSCRIBE PAGES
         try:
             response = client.models.generate_content(
-                model=MODEL,
+                model=model_name,
                 contents=content_items,
                 config=types.GenerateContentConfig(
                     # TODO: any other config for fine tuning?
@@ -119,7 +127,7 @@ def transcribe_batch(pdf_path, pages_file="", skip_letters=[], verbose=False):
                     print("Warning: Content was blocked by safety filters.")
 
             safe_name = '_'.join([f"{num:02d}" for num in pages])
-            output_path = os.path.join(output_dir, f"ocr_pages_{safe_name}.md")
+            output_path = os.path.join(output_dir, f"ocr_{model_key}_pages_{safe_name}.md")
 
             with open(output_path, 'w', encoding='utf-8') as out_f:
                 out_f.write(response.text)
@@ -145,6 +153,7 @@ if __name__ == "__main__":
         help="The name of the file containing letter page ranges, if not using the default pages{pdf_name}.txt")
     parser.add_argument("--skip_letters", nargs='+', type=int, default=[],
         help="Space separated list of letter numbers to skip (0-indexed lines in the pages file)")
+    parser.add_argument("--model", default="25fl", help="LLM model to use (see map at beginning of file)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
