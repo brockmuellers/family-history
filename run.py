@@ -1,6 +1,8 @@
+import argparse
 import os
 import re
 import time
+import sys
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -8,20 +10,19 @@ from google.genai import types
 """
 # TODO how do you represent the optional arg, conventionally
 RUN: python run.py original_pdf_file_to_transcribe.pdf [pages_file.txt]
-optional pages_file arg (if doing a retry run with only certain pages; default is the pages{pdf_name}.txt file)
 """
 
 MODEL = 'gemini-2.5-flash-lite'
 COOLDOWN = 5
 USER_PROMPT = "Transcribe these letter pages, in the following order: {}"
-SYSTEM_INSTRUCTION_FILE = "./system_instruction.txt"
+SYSTEM_INSTRUCTION_FILE = "system_instruction.md"
 
-client = genai.Client() # No API key needed for free tier
+client = genai.Client() # API key loaded from env
 
 def parse_range(range_str):
     """
     Takes a page range, and converts it to an array
-    This flexible formats handle pages scanned out of order
+    This flexible format handles pages scanned out of order
     E.g. '2-5,10,7-9' -> [2, 3, 4, 5, 10, 7, 8, 9]
     """
     pages = []
@@ -34,23 +35,29 @@ def parse_range(range_str):
     return pages
 
 def get_pdf_dir_and_name(pdf_path):
-    pdf_name = os.path.splitext(os.path.basename(pdf_path))[0] # name without extension
-    return os.path.abspath(pdf_path), pdf_name
+    pdf_file_name = os.path.basename(pdf_path)
+    pdf_name = os.path.splitext(pdf_file_name)[0] # name without extension
+    return os.path.dirname(os.path.abspath(pdf_path)), pdf_name
 
-# This is mostly AI output, just to have a scaffold; I've put TODOs in where I need to make changes
-def transcribe_batch(pdf_path, pages_file=""):
+def transcribe_batch(pdf_path, pages_file="", skip_letters=[], verbose=False):
+
+    if not os.path.exists(pdf_path):
+        print(f"Cannot find input file {pdf_path}")
+        sys.exit(1)
 
     # TODO it's a little awkward to take the PDF path given that we do nothing with it
     # relying on the preprocessing script but we could add preprocessing here later I suppose
     pdf_dir, pdf_name = get_pdf_dir_and_name(pdf_path)
     image_dir = f"{pdf_dir}/temp_{pdf_name}"
-    pages_file = f"{pdf_dir}/pages_{pdf_name}.txt" # making this configurable; e.g. if the thing fails midway through because file not found etc
+    if pages_file == "":
+        pages_file = f"{pdf_dir}/pages_{pdf_name}.txt"
     output_dir = image_dir
 
-    if not (os.path.exists(image_dir) or os.path.exists(pages_file)):
+    if not (os.path.exists(image_dir) and os.path.exists(pages_file)):
         # The initialization could be theoretically done in this script,
         # but it's in a bash script for now for easier manual use
         print(f"Project not correctly initialized; {image_dir} and {pages_file} must both exist")
+        sys.exit(1)
 
     with open(SYSTEM_INSTRUCTION_FILE, 'r') as f:
         system_instructions = f.read()
@@ -63,16 +70,21 @@ def transcribe_batch(pdf_path, pages_file=""):
         pages_list = [parse_range(range_string) for range_string in range_strings]
 
     for i, pages in enumerate(pages_list):
+        if i in skip_letters:
+            print(f"Skipping letter {i} per user request")
+            continue
         print(f"Processing letter {i} of {len(pages_list)}; pages {pages}")
+        start_time = time.time()
 
         # BUILD REQUEST
+        content_items = []
         for num in pages:
             # Matches the 'page-01.png' format (zero-padded)
             file_name = f"page-{num:02d}.png"
-            file_path = os.path.join(IMAGE_DIR, file_name)
+            file_path = os.path.join(image_dir, file_name)
 
             if os.path.exists(file_path):
-                img = Image.open(file_path)
+                img = Image.open(file_path) # Images are about 1.2 mb
                 content_items.append(img)
             else:
                 print(f"Warning: File {file_name} not found. Exiting.")
@@ -90,29 +102,50 @@ def transcribe_batch(pdf_path, pages_file=""):
                 )
             )
 
-            safe_name = letter_range.replace(',', '_')
-            output_path = os.path.join(OUTPUT_DIR, f"letter_{safe_name}.md")
+            # SOME LOGGING
+            if verbose:
+                # Accessing usage metadata
+                usage = response.usage_metadata
+                print(f"Prompt Tokens: {usage.prompt_token_count}")
+                print(f"Candidates Tokens: {usage.candidates_token_count}")
+                print(f"Total Tokens: {usage.total_token_count}")
+                # Accessing the model's internal reasoning (if available)
+                for part in response.candidates[0].content.parts:
+                    if part.thought:
+                        # Could consider saving these to file
+                        print(f"MODEL REASONING: {part.text}")
+                # Check if the response was flagged
+                if response.candidates[0].finish_reason == "SAFETY":
+                    print("Warning: Content was blocked by safety filters.")
+
+            safe_name = '_'.join([f"{num:02d}" for num in pages])
+            output_path = os.path.join(output_dir, f"ocr_pages_{safe_name}.md")
 
             with open(output_path, 'w', encoding='utf-8') as out_f:
                 out_f.write(response.text)
-            print(f"Successfully saved transcribed letter {i} with pages {pages}")
+            end_time = time.time()
+            print(f"Successfully saved transcribed letter {i} with pages {pages}. Total time: {end_time - start_time:.2f} seconds")
 
         except Exception as e:
+            print(f"Exception: {e}")
             print(f"Error transcribing letter {i} with pages {pages}. Exiting.")
             # we'll exit here so it's obvious that something was missed, but consider continuing
-            # also could gracefully handle rate limit errors specifically by sleeping
+            # also could gracefully handle rate limit errors (429) specifically by sleeping
             sys.exit(1)
 
         # RATE LIMIT AVOIDANCE
         time.sleep(COOLDOWN)
 
 if __name__ == "__main__":
-    # could upgrade to argparse someday, or make this implementation less awkward
-    if len(sys.argv) < 1 or len(sys.argv) > 2:
-        print("Error: must provide either 1 or 2 arguments")
-        sys.exit(1)
 
-    if len(sys.argv) = 1:
-        transcribe_batch(sys.argv[1], pages_file=sys.argv[2])
+    parser = argparse.ArgumentParser(description="A script to process handwritten letter images with gen AI.")
+    parser.add_argument("pdf_path",
+        help="The name of the source PDF file to process (not in temp folder).")
+    parser.add_argument("--pages_file",
+        help="The name of the file containing letter page ranges, if not using the default pages{pdf_name}.txt")
+    parser.add_argument("--skip_letters", nargs='+', type=int, default=[],
+        help="Space separated list of letter numbers to skip (0-indexed lines in the pages file)")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
 
-    transcribe_batch(sys.argv[1])
+    transcribe_batch(**vars(args))
