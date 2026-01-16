@@ -17,8 +17,8 @@ MODELS = {
     '25f': 'gemini-2.5-flash', # cheapish, a bit better than the lite, 5 RPM 20 RPD
     '25p': 'gemini-2.5-pro', # pricey, got a 429 so maybe I can't use it
     '3fp': 'gemini-3-flash-preview', # cheapish, 5 RPM 20 RPD
+    #'3pp': 'gemini-3-pro-preview', # I don't get this in the free tier
     'manual': 'manual', # skips the API calls so I can do them manually
-    #'3pp': 'gemini-3-pro-preview' # I don't get this in the free tier
     }
 COOLDOWN = 5
 USER_PROMPT = "Transcribe these letter pages, in the following order: {}"
@@ -46,7 +46,7 @@ def get_pdf_dir_and_name(pdf_path):
     pdf_name = os.path.splitext(pdf_file_name)[0] # name without extension
     return os.path.dirname(os.path.abspath(pdf_path)), pdf_name
 
-def write_output_file(content, pages_arr, model_key):
+def write_output_file(content, output_dir, pages_arr, model_key):
     safe_name = '_'.join([f"{num:02d}" for num in pages_arr])
     output_path = os.path.join(output_dir, f"ocr_{model_key}_pages_{safe_name}.md")
 
@@ -108,15 +108,14 @@ def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose
         content_items.append(USER_PROMPT.format(pages))
 
         # TRANSCRIBE PAGES
-        reponse = None
+        response = None
         try:
 
             if model_key == "manual":
                 # Just generate an empty file to be filled in manually
-                write_output_file("", pages, model_key)
+                write_output_file("", output_dir, pages, model_key)
                 continue
 
-            print("not continued")
             response = client.models.generate_content(
                 model=model_name,
                 contents=content_items,
@@ -128,7 +127,7 @@ def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose
             output = response.text
 
             # Write file before all the logging, in case there's some exception there
-            write_output_file(output, pages, model_key)
+            write_output_file(output, output_dir, pages, model_key)
             end_time = time.time()
             print(f"Successfully saved transcribed letter {i} with pages {pages}. Total time: {end_time - start_time:.2f} seconds")
 
