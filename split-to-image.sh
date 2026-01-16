@@ -7,6 +7,7 @@ set -euo pipefail
 shopt -s nullglob
 
 # Extract the directory name from the input pdf's full path
+# TODO would be nice to check if the input exists first
 PDF_PATH=$(readlink -f "$1")
 PDF_DIR=$(dirname "$PDF_PATH")
 PDF_NAME=$(basename "${PDF_PATH%.*}") # the filename without extension

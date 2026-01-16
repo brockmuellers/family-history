@@ -32,7 +32,7 @@ Random notes:
 
 The main prompt can be found in system_instruction.md. I sometimes use this for manual runs (in tests, the workflow section was pasted at the end):
 ```
-Below are your instructions. I am uploading some images that you will process, but do not do it just yet. Confirm that you understand the instructions and let me know if there's anything I should clarify. Then, I will provide you a range of pages to transcribe (we will do it in several batches).
+Below are your instructions. Confirm that you understand the instructions and let me know if there's anything I should clarify. Then, I will upload some images for you to process in batches. I will tell you the page numbers to process in each batch.
 
 ### **Workflow**
 
