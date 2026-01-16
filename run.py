@@ -17,6 +17,7 @@ MODELS = {
     '25f': 'gemini-2.5-flash', # cheapish, a bit better than the lite, 5 RPM 20 RPD
     '25p': 'gemini-2.5-pro', # pricey, got a 429 so maybe I can't use it
     '3fp': 'gemini-3-flash-preview', # cheapish, 5 RPM 20 RPD
+    'manual': 'manual', # skips the API calls so I can do them manually
     #'3pp': 'gemini-3-pro-preview' # I don't get this in the free tier
     }
 COOLDOWN = 5
@@ -44,6 +45,13 @@ def get_pdf_dir_and_name(pdf_path):
     pdf_file_name = os.path.basename(pdf_path)
     pdf_name = os.path.splitext(pdf_file_name)[0] # name without extension
     return os.path.dirname(os.path.abspath(pdf_path)), pdf_name
+
+def write_output_file(content, pages_arr, model_key):
+    safe_name = '_'.join([f"{num:02d}" for num in pages_arr])
+    output_path = os.path.join(output_dir, f"ocr_{model_key}_pages_{safe_name}.md")
+
+    with open(output_path, 'w', encoding='utf-8') as out_f:
+        out_f.write(content)
 
 def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose=False):
     model_name = MODELS[model]
@@ -100,7 +108,15 @@ def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose
         content_items.append(USER_PROMPT.format(pages))
 
         # TRANSCRIBE PAGES
+        reponse = None
         try:
+
+            if model_key == "manual":
+                # Just generate an empty file to be filled in manually
+                write_output_file("", pages, model_key)
+                continue
+
+            print("not continued")
             response = client.models.generate_content(
                 model=model_name,
                 contents=content_items,
@@ -109,23 +125,10 @@ def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose
                     system_instruction=system_instructions
                 )
             )
+            output = response.text
 
-            # Log full response if there's an issue
-            # Just checking candidates for now because that's one issue I had
-            if not response.candidates:
-                json_data = response.model_dump_json()
-                pretty_json = json.dumps(json.loads(json_data), indent=2)
-                if verbose:
-                    print(f"FULL RESPONSE: {pretty_json}")
-                print("Error: No candidates returned. The request may have been blocked or failed.")
-                return
-
-            # Write file (maybe should be done before the candidates check)
-            safe_name = '_'.join([f"{num:02d}" for num in pages])
-            output_path = os.path.join(output_dir, f"ocr_{model_key}_pages_{safe_name}.md")
-
-            with open(output_path, 'w', encoding='utf-8') as out_f:
-                out_f.write(response.text)
+            # Write file before all the logging, in case there's some exception there
+            write_output_file(output, pages, model_key)
             end_time = time.time()
             print(f"Successfully saved transcribed letter {i} with pages {pages}. Total time: {end_time - start_time:.2f} seconds")
 
@@ -138,7 +141,8 @@ def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose
                 print(f"Total Tokens: {usage.total_token_count}")
 
                 # Accessing the model's internal reasoning (if available)
-                # (checked that candidates exists already above)
+                if not response.candidates:
+                    raise Exception("Error: No candidates returned. The request may have been blocked or failed.")
                 for part in response.candidates[0].content.parts:
                     if part.thought:
                         # Could consider saving these to file
@@ -147,12 +151,16 @@ def transcribe_batch(pdf_path, pages_file="", model="", skip_letters=[], verbose
                 if response.candidates[0].finish_reason == "SAFETY":
                     print("Warning: Content was blocked by safety filters.")
 
-
         except Exception as e:
             print(f"Exception: {e}")
-            print(f"Error transcribing letter {i} with pages {pages}. Exiting.")
+            if response is not None:
+                # Log the full response if we have it
+                json_data = response.model_dump_json()
+                pretty_json = json.dumps(json.loads(json_data), indent=2)
+
             # we'll exit here so it's obvious that something was missed, but consider continuing
             # also could gracefully handle rate limit errors (429) specifically by sleeping
+            print(f"Error transcribing letter {i} with pages {pages}. Exiting.")
             return
 
         # RATE LIMIT AVOIDANCE
@@ -168,7 +176,7 @@ if __name__ == "__main__":
         help="The name of the file containing letter page ranges, if not using the default pages{pdf_name}.txt")
     parser.add_argument("--skip_letters", nargs='+', type=int, default=[],
         help="Space separated list of letter numbers to skip (0-indexed lines in the pages file)")
-    parser.add_argument("--model", default="25fl", help="LLM model to use (see map at beginning of file)")
+    parser.add_argument("--model", default="manual", help="LLM model to use (see map at beginning of file)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
