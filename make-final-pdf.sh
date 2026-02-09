@@ -7,8 +7,8 @@
 set -euo pipefail
 shopt -s nullglob
 
-# CONTROL FLOW hacky hacky these should be args; default all to false for normal flow
-SKIP_MD_TO_PDF=false
+# CONTROL FLOW hacky hacky these should be args or diff; default all to false for normal flow
+SKIP_MD_TO_PDF=true
 INTERLEAVE=true
 SIDE_BY_SIDE_INTERLEAVE=true
 
@@ -38,7 +38,7 @@ else
     echo "Skipping markdown to pdf conversion"
 fi
 
-# Unite all pdf files in the temp directory that match the "ocr_*" pattern
+# Unite all pdf files in the temp directory that match the "ocr_*" pattern WHICH COULD BE A PROBLEM
 # Output file goes in the parent directory where the original unprocessed PDF is
 echo "Uniting pdf files..."
 outfile="${PDF_DIR}/ocr_${PDF_NAME}.pdf"
@@ -54,6 +54,8 @@ if ! [[ $INTERLEAVE == "true" || $SIDE_BY_SIDE_INTERLEAVE == "true" ]]; then
 fi
 
 # If PDFs have the same number of pages, it's a loose guarantee that interleaving will be correct
+# Hack - if the original PDF needs its pages reordered, put the reordered file path here
+#PDF_PATH="path/reordered_letters.pdf"
 echo $PDF_PATH
 num_pages_original=$(pdfinfo $PDF_PATH | awk '/^Pages:/ {print $2}')
 if [[ $num_pages != $num_pages_original ]]; then

@@ -1,4 +1,4 @@
-# family_history
+# family-history
 
 A tool to process handwritten letters and produce a more readable PDF, using Gemini-backed OCR.
 
